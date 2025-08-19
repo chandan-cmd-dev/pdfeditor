@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pdf-editor-pdfops
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pdf-editor-pdfops
+  template:
+    metadata:
+      labels:
+        app: pdf-editor-pdfops
+    spec:
+      containers:
+        - name: pdfops
+          image: pdf-editor-pdfops:latest
+          ports:
+            - containerPort: 9000
+          env:
+            - name: PDFOPS_BROKER_URL
+              value: redis://redis:6379/0
+            - name: PDFOPS_RESULT_BACKEND
+              value: redis://redis:6379/1
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pdf-editor-pdfops
+spec:
+  selector:
+    app: pdf-editor-pdfops
+  ports:
+    - port: 80
+      targetPort: 9000
+  type: ClusterIP

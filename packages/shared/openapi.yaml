@@ -1,0 +1,247 @@
+openapi: 3.1.0
+info:
+  title: PDF Editor API
+  version: 0.1.0
+servers:
+  - url: https://api.pdf-editor.local
+    description: Production API
+  - url: http://localhost:8080
+    description: Local development
+paths:
+  /auth/signup:
+    post:
+      summary: Sign up for a new account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignupRequest'
+      responses:
+        '201':
+          description: Created
+        '400':
+          description: Invalid input
+  /auth/login:
+    post:
+      summary: Log in with email and password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: OK
+        '401':
+          description: Invalid credentials
+  /me:
+    get:
+      summary: Get current user
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: User
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          description: Unauthorized
+  /files:
+    get:
+      summary: List files of current user
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: List of files
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/File'
+    post:
+      summary: Create file metadata and return an upload URL
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                size:
+                  type: integer
+              required: [name, size]
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  uploadUrl:
+                    type: string
+                  fileId:
+                    type: string
+        '401':
+          description: Unauthorized
+  /files/{id}:
+    get:
+      summary: Get file metadata and a download URL
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: File information
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  name:
+                    type: string
+                  size:
+                    type: integer
+                  created_at:
+                    type: string
+                    format: date-time
+                  downloadUrl:
+                    type: string
+        '403':
+          description: Forbidden
+        '404':
+          description: Not found
+  /billing/subscribe:
+    post:
+      summary: Start a subscription and return a Stripe checkout URL
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  checkoutUrl:
+                    type: string
+  /admin/users:
+    get:
+      summary: List all users (admin only)
+      security:
+        - cookieAuth: []
+        - adminAuth: []
+      responses:
+        '200':
+          description: List of users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/User'
+        '403':
+          description: Forbidden
+  /admin/files:
+    get:
+      summary: List all files (admin only)
+      security:
+        - cookieAuth: []
+        - adminAuth: []
+      responses:
+        '200':
+          description: List of files
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AdminFile'
+        '403':
+          description: Forbidden
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: token
+    adminAuth:
+      type: http
+      scheme: bearer
+  schemas:
+    SignupRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 6
+      required: [email, password]
+    LoginRequest:
+      type: object
+      properties:
+        email:
+          type: string
+        password:
+          type: string
+      required: [email, password]
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+        role:
+          type: string
+        plan:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+    File:
+      type: object
+      properties:
+        id:
+          type: string
+        owner_id:
+          type: string
+        name:
+          type: string
+        size:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+    AdminFile:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        owner_email:
+          type: string
+        created_at:
+          type: string
+          format: date-time

@@ -1,0 +1,21 @@
+# infra/Dockerfile.web
+FROM node:18 AS build
+WORKDIR /usr/src/app
+
+# Copy manifest(s). The wildcard makes package-lock.json optional.
+COPY apps/web/package*.json ./
+
+# Install deps (no audit/fund for faster CI)
+RUN npm install --no-audit --no-fund
+
+# Copy source and build
+COPY apps/web ./
+RUN npm run build
+
+FROM node:18-alpine
+ENV NODE_ENV=production
+WORKDIR /usr/src/app
+# Copy the built app and minimal runtime deps
+COPY --from=build /usr/src/app ./
+EXPOSE 3000
+CMD ["npm", "start"]

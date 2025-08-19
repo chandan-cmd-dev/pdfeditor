@@ -1,0 +1,76 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pdf-editor-api
+  labels:
+    app: pdf-editor-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pdf-editor-api
+  template:
+    metadata:
+      labels:
+        app: pdf-editor-api
+    spec:
+      containers:
+        - name: api
+          image: pdf-editor-api:latest
+          ports:
+            - containerPort: 8080
+          env:
+            - name: API_PORT
+              value: "8080"
+            - name: API_JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: pdf-editor-secrets
+                  key: jwt-secret
+            - name: API_POSTGRES_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: pdf-editor-secrets
+                  key: postgres-dsn
+            - name: API_REDIS_ADDR
+              value: redis:6379
+            - name: STORAGE_DIR
+              value: /data
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pdf-editor-api
+spec:
+  selector:
+    app: pdf-editor-api
+  ports:
+    - port: 80
+      targetPort: 8080
+      protocol: TCP
+  type: ClusterIP
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: pdf-editor-api-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: pdf-editor-api
+  minReplicas: 1
+  maxReplicas: 3
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 60

@@ -1,0 +1,110 @@
+version: '3.8'
+services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: pdfeditor
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+
+  minio:
+    image: minio/minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${API_S3_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${API_S3_SECRET_KEY}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - miniodata:/data
+
+  api:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.api
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    environment:
+      API_PORT: ${API_PORT}
+      API_HOST: 0.0.0.0
+      API_POSTGRES_DSN: postgres://postgres:postgres@db:5432/pdfeditor?sslmode=disable
+      API_JWT_SECRET: change-me
+      API_REDIS_ADDR: redis:6379
+      API_S3_ENDPOINT: http://minio:9000
+      API_S3_ACCESS_KEY: ${API_S3_ACCESS_KEY}
+      API_S3_SECRET_KEY: ${API_S3_SECRET_KEY}
+      API_S3_BUCKET: ${API_S3_BUCKET}
+      API_STRIPE_SECRET: ${API_STRIPE_SECRET}
+      API_STRIPE_WEBHOOK_SECRET: ${API_STRIPE_WEBHOOK_SECRET}
+      API_OAUTH_GOOGLE_CLIENT_ID: ${API_OAUTH_GOOGLE_CLIENT_ID}
+      API_OAUTH_GOOGLE_CLIENT_SECRET: ${API_OAUTH_GOOGLE_CLIENT_SECRET}
+    volumes:
+      - ./uploads:/home/app/uploads
+    ports:
+      - "8080:8080"
+
+  pdfops:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.pdfops
+    depends_on:
+      redis:
+        condition: service_started
+    environment:
+      PDFOPS_BROKER_URL: redis://redis:6379/0
+      PDFOPS_RESULT_BACKEND: redis://redis:6379/1
+    ports:
+      - "9002:9000"
+
+  celery-worker:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.pdfops
+    depends_on:
+      redis:
+        condition: service_started
+    command: celery -A tasks worker --loglevel=info
+    environment:
+      PDFOPS_BROKER_URL: redis://redis:6379/0
+      PDFOPS_RESULT_BACKEND: redis://redis:6379/1
+
+  web:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.web
+    depends_on:
+      api:
+        condition: service_started
+      pdfops:
+        condition: service_started
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8080
+      NEXT_PUBLIC_PDFOPS_URL: http://localhost:9002
+      PUBLIC_ADSENSE_CLIENT_ID: ${PUBLIC_ADSENSE_CLIENT_ID}
+    ports:
+      - "3000:3000"
+
+volumes:
+  pgdata:
+  redisdata:
+  miniodata:

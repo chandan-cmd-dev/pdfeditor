@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pdf-editor-web
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pdf-editor-web
+  template:
+    metadata:
+      labels:
+        app: pdf-editor-web
+    spec:
+      containers:
+        - name: web
+          image: pdf-editor-web:latest
+          ports:
+            - containerPort: 3000
+          env:
+            - name: NEXT_PUBLIC_API_URL
+              value: http://pdf-editor-api
+            - name: NEXT_PUBLIC_PDFOPS_URL
+              value: http://pdf-editor-pdfops
+            - name: PUBLIC_ADSENSE_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: pdf-editor-secrets
+                  key: adsense-client-id
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pdf-editor-web
+spec:
+  selector:
+    app: pdf-editor-web
+  ports:
+    - port: 80
+      targetPort: 3000
+  type: ClusterIP

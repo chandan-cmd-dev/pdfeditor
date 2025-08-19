@@ -1,0 +1,21 @@
+FROM golang:1.20-alpine AS builder
+WORKDIR /build
+
+# cache deps
+COPY services/api/go.mod .
+RUN go mod download
+
+# now copy the source and tidy (adds any new imports to go.mod/go.sum)
+COPY services/api .
+RUN go mod tidy
+
+# build
+RUN go build -o api ./...
+
+FROM alpine:3.18
+RUN addgroup -S app && adduser -S app -G app
+USER app
+WORKDIR /home/app
+COPY --from=builder /build/api ./api
+EXPOSE 8080
+CMD ["./api"]

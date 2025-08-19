@@ -1,0 +1,2 @@
+This directory stores uploaded PDF files when running locally via Docker.
+It is mounted into the API container at `/home/app/uploads`.
