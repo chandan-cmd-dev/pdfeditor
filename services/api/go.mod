@@ -48,4 +48,5 @@ require (
 )
 
 replace github.com/minio/minio-go/v7 => github.com/minio/minio-go/v7 v7.0.20
+replace github.com/smartystreets/assertions => github.com/smarty/assertions v1.16.0
 replace golang.org/x/sys => golang.org/x/sys v0.26.0
