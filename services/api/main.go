@@ -13,6 +13,8 @@ import (
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	minio "github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7/pkg/credentials"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -45,6 +47,8 @@ type App struct {
 	DB         *gorm.DB
 	JwtSecret  []byte
 	StorageDir string
+	S3Client   *minio.Client
+	S3Bucket   string
 }
 
 func main() {
@@ -63,6 +67,25 @@ func main() {
 		storageDir = "/uploads" // matches docker volume in compose
 	}
 	_ = os.MkdirAll(storageDir, 0755)
+
+	s3Endpoint := os.Getenv("API_S3_ENDPOINT")
+	s3Access := os.Getenv("API_S3_ACCESS_KEY")
+	s3Secret := os.Getenv("API_S3_SECRET_KEY")
+	s3Bucket := os.Getenv("API_S3_BUCKET")
+	var s3Client *minio.Client
+	if s3Endpoint != "" && s3Access != "" && s3Secret != "" && s3Bucket != "" {
+		useSSL := strings.HasPrefix(s3Endpoint, "https://")
+		endpoint := strings.TrimPrefix(strings.TrimPrefix(s3Endpoint, "https://"), "http://")
+		s3Client, err = minio.New(endpoint, &minio.Options{
+			Creds:  credentials.NewStaticV4(s3Access, s3Secret, ""),
+			Secure: useSSL,
+		})
+		if err != nil {
+			log.Fatalf("failed to init s3 client: %v", err)
+		}
+	} else {
+		log.Printf("S3 credentials not provided; using local storage at %s", storageDir)
+	}
 
 	// --- DB connect (with simple retry) --------------------------------------
 	var db *gorm.DB
@@ -88,6 +111,8 @@ func main() {
 		DB:         db,
 		JwtSecret:  []byte(jwtSecret),
 		StorageDir: storageDir,
+		S3Client:   s3Client,
+		S3Bucket:   s3Bucket,
 	}
 
 	// --- HTTP server ---------------------------------------------------------
@@ -376,6 +401,14 @@ func (a *App) AuthMiddleware(c *gin.Context) {
 // handleUpload writes the request body into a file in the storage directory.
 func (a *App) handleUpload(c *gin.Context) {
 	key := c.Param("key")
+	if a.S3Client != nil {
+		if _, err := a.S3Client.PutObject(c.Request.Context(), a.S3Bucket, key, c.Request.Body, -1, minio.PutObjectOptions{}); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.Status(http.StatusNoContent)
+		return
+	}
 	full := filepath.Join(a.StorageDir, key)
 	if err := os.MkdirAll(filepath.Dir(full), 0755); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -397,6 +430,23 @@ func (a *App) handleUpload(c *gin.Context) {
 // handleDownload streams a file back to the client (public demo endpoint).
 func (a *App) handleDownload(c *gin.Context) {
 	key := c.Param("key")
+	if a.S3Client != nil {
+		obj, err := a.S3Client.GetObject(c.Request.Context(), a.S3Bucket, key, minio.GetObjectOptions{})
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "file not found"})
+			return
+		}
+		defer obj.Close()
+		stat, err := obj.Stat()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.Header("Content-Type", "application/pdf")
+		c.Header("Content-Length", fmt.Sprintf("%d", stat.Size))
+		http.ServeContent(c.Writer, c.Request, key, stat.LastModified, obj)
+		return
+	}
 	full := filepath.Join(a.StorageDir, key)
 	f, err := os.Open(full)
 	if err != nil {
